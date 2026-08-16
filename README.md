@@ -1,1 +1,0 @@
-# script-de-AUTO-FARM-

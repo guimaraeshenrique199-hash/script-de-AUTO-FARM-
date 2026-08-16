@@ -1,0 +1,646 @@
+--[[
+    Script OP de auto farm🤖 de PVP🥊 by henrique🦑
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local ALTURA = 4.8
+local DISTANCIA_LADO = 4
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "TargetFollowGui"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- CONTADOR DE PLAYERS
+local playersText = Instance.new("TextLabel")
+playersText.Size = UDim2.new(0,140,0,35)
+playersText.Position = UDim2.new(1,-155,0.45,-40)
+playersText.BackgroundColor3 = Color3.fromRGB(45,45,55)
+playersText.TextColor3 = Color3.new(1,1,1)
+playersText.TextScaled = true
+playersText.Font = Enum.Font.GothamBold
+playersText.BorderSizePixel = 0
+playersText.ZIndex = 10
+playersText.Parent = gui
+
+local playersCorner = Instance.new("UICorner")
+playersCorner.CornerRadius = UDim.new(0,8)
+playersCorner.Parent = playersText
+
+local function atualizarPlayers()
+	playersText.Text = "👤Players: "..#Players:GetPlayers()
+end
+
+Players.PlayerAdded:Connect(atualizarPlayers)
+Players.PlayerRemoving:Connect(atualizarPlayers)
+atualizarPlayers()
+
+-- BOTÃO ON/OFF
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.new(0,140,0,50)
+toggle.Position = UDim2.new(1,-155,0.45,0)
+toggle.BackgroundColor3 = Color3.fromRGB(210,45,45)
+toggle.TextColor3 = Color3.new(1,1,1)
+toggle.Text = "OFF❌"
+toggle.TextScaled = true
+toggle.Font = Enum.Font.GothamBold
+toggle.BorderSizePixel = 0
+toggle.ZIndex = 10
+toggle.Parent = gui
+
+local c1 = Instance.new("UICorner")
+c1.CornerRadius = UDim.new(0,10)
+c1.Parent = toggle
+
+-- BOTÃO ALVO
+local targetButton = Instance.new("TextButton")
+targetButton.Size = UDim2.new(0,140,0,42)
+targetButton.Position = UDim2.new(1,-155,0.45,58)
+targetButton.BackgroundColor3 = Color3.fromRGB(45,45,55)
+targetButton.TextColor3 = Color3.new(1,1,1)
+targetButton.Text = "ALVO🎯"
+targetButton.TextScaled = true
+targetButton.Font = Enum.Font.GothamBold
+targetButton.BorderSizePixel = 0
+targetButton.ZIndex = 10
+targetButton.Parent = gui
+
+local c2 = Instance.new("UICorner")
+c2.CornerRadius = UDim.new(0,10)
+c2.Parent = targetButton
+
+-- LISTA
+local lista = Instance.new("ScrollingFrame")
+lista.Size = UDim2.new(0,190,0,230)
+lista.Position = UDim2.new(1,-205,0.45,108)
+lista.BackgroundColor3 = Color3.fromRGB(30,30,35)
+lista.BorderSizePixel = 0
+lista.ScrollBarThickness = 6
+lista.Visible = false
+lista.ZIndex = 1
+lista.Parent = gui
+
+local c3 = Instance.new("UICorner")
+c3.CornerRadius = UDim.new(0,10)
+c3.Parent = lista
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,4)
+layout.Parent = lista
+
+-- VARIÁVEIS
+local ativo = false
+local alvo = nil
+local aleatorio = false
+local seguirConnection = nil
+local morteConnection = nil
+
+local function atualizarAlvo()
+	if aleatorio then
+		targetButton.Text = "ALVO🎯: ❓️ALEATÓRIO❓️"
+	elseif alvo then
+		targetButton.Text = "ALVO🎯: "..alvo.Name
+	else
+		targetButton.Text = "ALVO🎯"
+	end
+end
+
+local function valido(p)
+	if not p or p == LocalPlayer then return false end
+
+	local char = p.Character
+	if not char then return false end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+
+	return hum and root and hum.Health > 0
+end
+
+local function maisProximo()
+	local char = LocalPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+
+	if not root then return nil end
+
+	local escolhido
+	local menor = math.huge
+
+	for _,p in ipairs(Players:GetPlayers()) do
+		if valido(p) then
+			local r = p.Character:FindFirstChild("HumanoidRootPart")
+
+			if r then
+				local d = (root.Position-r.Position).Magnitude
+
+				if d < menor then
+					menor = d
+					escolhido = p
+				end
+			end
+		end
+	end
+
+	return escolhido
+end
+
+local function aleatorioJogador()
+	local candidatos = {}
+
+	for _,p in ipairs(Players:GetPlayers()) do
+		if valido(p) and p ~= alvo then
+			table.insert(candidatos,p)
+		end
+	end
+
+	if #candidatos == 0 then
+		return maisProximo()
+	end
+
+	return candidatos[math.random(1,#candidatos)]
+end
+
+local function observarMorte()
+
+	if morteConnection then
+		morteConnection:Disconnect()
+	end
+
+	if not alvo then return end
+
+	local char = alvo.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+	if not hum then return end
+
+	morteConnection = hum.Died:Connect(function()
+
+		if not ativo or not aleatorio then return end
+
+		task.wait(0.2)
+
+		if not ativo then return end
+
+		alvo = maisProximo()
+
+		if not alvo then
+			alvo = aleatorioJogador()
+		end
+
+		if alvo then
+			atualizarAlvo()
+			observarMorte()
+		end
+	end)
+end
+
+-- DESLIGAR
+local function desligar()
+
+	ativo = false
+
+	if seguirConnection then
+		seguirConnection:Disconnect()
+		seguirConnection = nil
+	end
+
+	if morteConnection then
+		morteConnection:Disconnect()
+		morteConnection = nil
+	end
+
+	local meuChar = LocalPlayer.Character
+	local meuRoot = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
+
+	local alvoChar = alvo and alvo.Character
+	local alvoRoot = alvoChar and alvoChar:FindFirstChild("HumanoidRootPart")
+
+	if meuRoot and alvoRoot then
+		meuRoot.CFrame = alvoRoot.CFrame * CFrame.new(DISTANCIA_LADO,0,0)
+	end
+
+	local hum = meuChar and meuChar:FindFirstChildOfClass("Humanoid")
+
+	if hum then
+		hum.AutoRotate = true
+	end
+
+	toggle.Text = "OFF❌"
+	toggle.BackgroundColor3 = Color3.fromRGB(210,45,45)
+end
+
+-- LIGAR
+local function ligar()
+
+	if aleatorio then
+		alvo = aleatorioJogador()
+	elseif not valido(alvo) then
+		alvo = maisProximo()
+	end
+
+	if not alvo then
+		toggle.Text = "🤷SEM ALVO🚫"
+
+		task.delay(1,function()
+			if not ativo then
+				toggle.Text = "OFF❌"
+			end
+		end)
+
+		return
+	end
+
+	ativo = true
+
+	toggle.Text = "ON✅"
+	toggle.BackgroundColor3 = Color3.fromRGB(45,200,80)
+
+	atualizarAlvo()
+	observarMorte()
+
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+	if hum then
+		hum.AutoRotate = false
+	end
+
+	seguirConnection = RunService.RenderStepped:Connect(function()
+
+		if not ativo then return end
+
+		if not valido(alvo) then
+
+			if aleatorio then
+				alvo = maisProximo()
+
+				if alvo then
+					atualizarAlvo()
+					observarMorte()
+				end
+			end
+
+			return
+		end
+
+		local meuChar = LocalPlayer.Character
+		local alvoChar = alvo.Character
+
+		if not meuChar or not alvoChar then return end
+
+		local meuRoot = meuChar:FindFirstChild("HumanoidRootPart")
+		local alvoHead = alvoChar:FindFirstChild("Head")
+
+		if not meuRoot or not alvoHead then return end
+
+		local posicao =
+			alvoHead.Position + Vector3.new(0,ALTURA,0)
+
+		meuRoot.CFrame =
+			CFrame.new(posicao) *
+			CFrame.Angles(math.rad(-90),0,0)
+
+		meuRoot.AssemblyLinearVelocity = Vector3.zero
+		meuRoot.AssemblyAngularVelocity = Vector3.zero
+	end)
+end
+
+-- ON✅️/OFF❌️
+toggle.Activated:Connect(function()
+	if ativo then
+		desligar()
+	else
+		ligar()
+	end
+end)
+
+-- ABRIR LISTA
+targetButton.Activated:Connect(function()
+	lista.Visible = not lista.Visible
+end)
+
+-- ATUALIZAR LISTA
+local function atualizarLista()
+
+	for _,obj in ipairs(lista:GetChildren()) do
+		if obj:IsA("TextButton") then
+			obj:Destroy()
+		end
+	end
+
+	local randomButton = Instance.new("TextButton")
+	randomButton.Size = UDim2.new(1,-10,0,38)
+	randomButton.BackgroundColor3 = Color3.fromRGB(80,80,90)
+	randomButton.TextColor3 = Color3.new(1,1,1)
+	randomButton.Text = "❓️ALEATÓRIO❓️"
+	randomButton.TextScaled = true
+	randomButton.Font = Enum.Font.GothamBold
+	randomButton.BorderSizePixel = 0
+	randomButton.ZIndex = 2
+	randomButton.Parent = lista
+
+	randomButton.Activated:Connect(function()
+		aleatorio = true
+		alvo = nil
+		atualizarAlvo()
+		lista.Visible = false
+	end)
+
+	for _,p in ipairs(Players:GetPlayers()) do
+
+		if p ~= LocalPlayer then
+
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.new(1,-10,0,38)
+			b.BackgroundColor3 = Color3.fromRGB(55,55,65)
+			b.TextColor3 = Color3.new(1,1,1)
+			b.Text = p.Name
+			b.TextScaled = true
+			b.Font = Enum.Font.GothamBold
+			b.BorderSizePixel = 0
+			b.ZIndex = 2
+			b.Parent = lista
+
+			b.Activated:Connect(function()
+
+				aleatorio = false
+				alvo = p
+
+				atualizarAlvo()
+				lista.Visible = false
+
+				if ativo then
+					observarMorte()
+				end
+			end)
+		end
+	end
+
+	task.defer(function()
+		lista.CanvasSize = UDim2.new(
+			0,0,0,layout.AbsoluteContentSize.Y+10
+		)
+	end)
+end
+
+Players.PlayerAdded:Connect(function()
+	task.wait(0.2)
+	atualizarLista()
+	atualizarPlayers()
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+
+	if alvo == p then
+
+		if aleatorio and ativo then
+			alvo = maisProximo()
+
+			if alvo then
+				atualizarAlvo()
+				observarMorte()
+			end
+		else
+			alvo = nil
+			atualizarAlvo()
+		end
+	end
+
+	atualizarLista()
+	atualizarPlayers()
+end)
+
+atualizarLista()
+
+-- ==========================================
+-- BOTÃO 🔄MUDAR SERVIDOR🔄
+-- ==========================================
+
+local serverButton = Instance.new("ImageButton")
+serverButton.Size = UDim2.new(0,140,0,42)
+serverButton.Position = UDim2.new(1,-155,0.45,-87)
+
+-- FUNDO IGUAL AOS OUTROS BOTÕES
+serverButton.BackgroundColor3 = Color3.fromRGB(45,45,55)
+serverButton.BackgroundTransparency = 0
+
+-- MANTÉM A IMAGEM
+serverButton.Image = "rbxassetid://73661335718300"
+
+serverButton.ZIndex = 10
+serverButton.Parent = gui
+
+-- BORDAS ARREDONDADAS
+local serverCorner = Instance.new("UICorner")
+serverCorner.CornerRadius = UDim.new(0,10)
+serverCorner.Parent = serverButton
+
+local serverText = Instance.new("TextLabel")
+serverText.Size = UDim2.new(1,0,1,0)
+serverText.BackgroundTransparency = 1
+serverText.Text = "Mudar servidor"
+serverText.TextColor3 = Color3.fromRGB(60,140,220)
+serverText.TextStrokeTransparency = 1
+serverText.TextScaled = true
+serverText.Font = Enum.Font.GothamBold
+serverText.ZIndex = 11
+serverText.Parent = serverButton
+
+-- ==========================================
+-- TELA DE CONFIRMAÇÃO
+-- ==========================================
+
+local confirmGui = Instance.new("Frame")
+confirmGui.Size = UDim2.new(1,0,1,0)
+confirmGui.Position = UDim2.new(0,0,0,0)
+confirmGui.BackgroundColor3 = Color3.fromRGB(90,90,90)
+confirmGui.BackgroundTransparency = 0.15
+confirmGui.Visible = false
+confirmGui.ZIndex = 100
+confirmGui.Parent = gui
+
+local confirmBox = Instance.new("Frame")
+confirmBox.Size = UDim2.new(0,330,0,190)
+confirmBox.Position = UDim2.new(0.5,-165,0.5,-95)
+confirmBox.BackgroundColor3 = Color3.fromRGB(45,45,55)
+confirmBox.BorderSizePixel = 0
+confirmBox.ZIndex = 101
+confirmBox.Parent = confirmGui
+
+local confirmCorner = Instance.new("UICorner")
+confirmCorner.CornerRadius = UDim.new(0,15)
+confirmCorner.Parent = confirmBox
+
+local confirmText = Instance.new("TextLabel")
+confirmText.Size = UDim2.new(1,-30,0,75)
+confirmText.Position = UDim2.new(0,15,0,15)
+confirmText.BackgroundTransparency = 1
+confirmText.Text = "Você tem certeza que quer mudar de servidor?"
+confirmText.TextColor3 = Color3.new(1,1,1)
+confirmText.TextScaled = true
+confirmText.Font = Enum.Font.GothamBold
+confirmText.ZIndex = 102
+confirmText.Parent = confirmBox
+
+-- BOTÃO SIM
+local simButton = Instance.new("TextButton")
+simButton.Size = UDim2.new(0,125,0,50)
+simButton.Position = UDim2.new(0,25,1,-70)
+simButton.BackgroundColor3 = Color3.fromRGB(45,200,80)
+simButton.TextColor3 = Color3.new(1,1,1)
+simButton.Text = "SIM ✅"
+simButton.TextScaled = true
+simButton.Font = Enum.Font.GothamBold
+simButton.BorderSizePixel = 0
+simButton.ZIndex = 102
+simButton.Parent = confirmBox
+
+local simCorner = Instance.new("UICorner")
+simCorner.CornerRadius = UDim.new(0,10)
+simCorner.Parent = simButton
+
+-- BOTÃO NÃO
+local naoButton = Instance.new("TextButton")
+naoButton.Size = UDim2.new(0,125,0,50)
+naoButton.Position = UDim2.new(1,-150,1,-70)
+naoButton.BackgroundColor3 = Color3.fromRGB(210,45,45)
+naoButton.TextColor3 = Color3.new(1,1,1)
+naoButton.Text = "NÃO ❌"
+naoButton.TextScaled = true
+naoButton.Font = Enum.Font.GothamBold
+naoButton.BorderSizePixel = 0
+naoButton.ZIndex = 102
+naoButton.Parent = confirmBox
+
+local naoCorner = Instance.new("UICorner")
+naoCorner.CornerRadius = UDim.new(0,10)
+naoCorner.Parent = naoButton
+
+-- ABRIR CONFIRMAÇÃO
+serverButton.Activated:Connect(function()
+	confirmGui.Visible = true
+end)
+
+-- NÃO: FECHA SOMENTE A CONFIRMAÇÃO
+naoButton.Activated:Connect(function()
+	confirmGui.Visible = false
+end)
+
+-- SIM: SAIR DO JOGO
+simButton.Activated:Connect(function()
+
+	simButton.Text = "Saindo..."
+
+	task.wait(0.3)
+
+	LocalPlayer:Kick(
+		"Mudando de servidor só entrar novamente no jogo que você estava jogando🎮"
+	)
+end)
+
+-- ==========================================
+-- BOTÃO ARRASTAR GUI
+-- ==========================================
+
+local dragButton = Instance.new("TextButton")
+dragButton.Size = UDim2.new(0,140,0,38)
+dragButton.Position = UDim2.new(1,-155,0.45,-129)
+dragButton.BackgroundColor3 = Color3.fromRGB(45,45,55)
+dragButton.TextColor3 = Color3.new(1,1,1)
+dragButton.Text = "✊️Arrastar gui✊️"
+dragButton.TextScaled = true
+dragButton.Font = Enum.Font.GothamBold
+dragButton.BorderSizePixel = 0
+dragButton.ZIndex = 10
+dragButton.Parent = gui
+
+local dragCorner = Instance.new("UICorner")
+dragCorner.CornerRadius = UDim.new(0,10)
+dragCorner.Parent = dragButton
+
+-- ARRASTAR TODO O GUI PELO BOTÃO
+local arrastando = false
+local inicioToque
+local inicioPosicao
+
+dragButton.InputBegan:Connect(function(input)
+
+	if input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+		arrastando = true
+		inicioToque = input.Position
+		inicioPosicao = toggle.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+
+	if not arrastando then return end
+
+	if input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseMovement then
+
+		local delta = input.Position - inicioToque
+
+		toggle.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y
+		)
+
+		playersText.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y - 40
+		)
+
+		targetButton.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y + 58
+		)
+
+		lista.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X - 50,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y + 108
+		)
+
+		serverButton.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y - 87
+		)
+
+		dragButton.Position = UDim2.new(
+			inicioPosicao.X.Scale,
+			inicioPosicao.X.Offset + delta.X,
+			inicioPosicao.Y.Scale,
+			inicioPosicao.Y.Offset + delta.Y - 129
+		)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+
+	if input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+		arrastando = false
+	end
+end)
+
+-- FPS / PING🎮
+loadstring(game:HttpGet("https://raw.githubusercontent.com/RXScript/RX-GUI-Version-1/refs/heads/main/FPS%20And%20Ping%20Display"))()
