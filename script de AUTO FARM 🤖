@@ -1,5 +1,5 @@
 --[[
-    Script OP de auto farm🤖 de PVP🥊 by henrique🦑
+    Script OP de auto farm🤖 de PVP🥊 | by henrique🦑
 ]]
 
 local Players = game:GetService("Players")
@@ -10,12 +10,31 @@ local LocalPlayer = Players.LocalPlayer
 
 local ALTURA = 4.8
 local DISTANCIA_LADO = 4
+local DISTANCIA = 6
+local DISTANCIA_COSTAS = 3.5
+local PROFUNDIDADE_PES = 5
+local ANGULO = "cabeça"
 
 -- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "TargetFollowGui"
 gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- FUNDO CINZA ESCURO, OPACO
+local painel = Instance.new("Frame")
+painel.Name = "PainelCinza"
+painel.Size = UDim2.new(0,154,0,289)
+painel.Position = UDim2.new(1,-162,0.45,-135)
+painel.BackgroundColor3 = Color3.fromRGB(30,30,35)
+painel.BackgroundTransparency = 0
+painel.BorderSizePixel = 0
+painel.ZIndex = 1
+painel.Parent = gui
+
+local painelCorner = Instance.new("UICorner")
+painelCorner.CornerRadius = UDim.new(0,12)
+painelCorner.Parent = painel
 
 -- CONTADOR DE PLAYERS
 local playersText = Instance.new("TextLabel")
@@ -34,7 +53,7 @@ playersCorner.CornerRadius = UDim.new(0,8)
 playersCorner.Parent = playersText
 
 local function atualizarPlayers()
-	playersText.Text = "👤Players: "..#Players:GetPlayers()
+    playersText.Text = "👤Players: "..#Players:GetPlayers()
 end
 
 Players.PlayerAdded:Connect(atualizarPlayers)
@@ -75,11 +94,29 @@ local c2 = Instance.new("UICorner")
 c2.CornerRadius = UDim.new(0,10)
 c2.Parent = targetButton
 
--- LISTA
+-- BOTÃO DE POSIÇÃO
+local anguloButton = Instance.new("TextButton")
+anguloButton.Size = UDim2.new(0,140,0,42)
+anguloButton.Position = UDim2.new(1,-155,0.45,108)
+anguloButton.BackgroundColor3 = Color3.fromRGB(45,45,55)
+anguloButton.BackgroundTransparency = 0
+anguloButton.TextColor3 = Color3.new(1,1,1)
+anguloButton.TextScaled = true
+anguloButton.Font = Enum.Font.GothamBold
+anguloButton.BorderSizePixel = 0
+anguloButton.ZIndex = 10
+anguloButton.Parent = gui
+
+local cAng = Instance.new("UICorner")
+cAng.CornerRadius = UDim.new(0,10)
+cAng.Parent = anguloButton
+
+-- LISTA DE ALVOS
 local lista = Instance.new("ScrollingFrame")
 lista.Size = UDim2.new(0,190,0,230)
-lista.Position = UDim2.new(1,-205,0.45,108)
+lista.Position = UDim2.new(1,-205,0.45,158)
 lista.BackgroundColor3 = Color3.fromRGB(30,30,35)
+lista.BackgroundTransparency = 0
 lista.BorderSizePixel = 0
 lista.ScrollBarThickness = 6
 lista.Visible = false
@@ -100,343 +137,509 @@ local alvo = nil
 local aleatorio = false
 local seguirConnection = nil
 local morteConnection = nil
+local heartbeatConnection = nil
+local attachment0 = nil
+local alignPosition = nil
+local alignOrientation = nil
+local arrastando = false
+local inicioToque = nil
+local inicioPosicao = nil
+
+-- CONTROLE DAS COLISÕES NO MODO PÉS / NOCLIP
+local colisaoOriginal = {}
+local personagemPes = nil
+
+local function restaurarColisoes()
+    for parte, valor in pairs(colisaoOriginal) do
+        if parte and parte.Parent then
+            parte.CanCollide = valor
+        end
+    end
+
+    table.clear(colisaoOriginal)
+    personagemPes = nil
+end
+
+local function ativarModoPes(char)
+    if not char then return end
+
+    if personagemPes ~= char then
+        restaurarColisoes()
+        personagemPes = char
+    end
+
+    -- Desativa colisão em todas as partes atuais do personagem.
+    for _, parte in ipairs(char:GetDescendants()) do
+        if parte:IsA("BasePart") then
+            if colisaoOriginal[parte] == nil then
+                colisaoOriginal[parte] = parte.CanCollide
+            end
+
+            parte.CanCollide = false
+        end
+    end
+end
+
+local function atualizarTextoAngulo()
+    if ANGULO == "cabeça" then
+        anguloButton.Text = "👨‍🦲Cabeça"
+    elseif ANGULO == "costas" then
+        anguloButton.Text = "👀 Costas"
+    else
+        anguloButton.Text = "🦶 Pés"
+    end
+end
 
 local function atualizarAlvo()
-	if aleatorio then
-		targetButton.Text = "ALVO🎯: ❓️ALEATÓRIO❓️"
-	elseif alvo then
-		targetButton.Text = "ALVO🎯: "..alvo.Name
-	else
-		targetButton.Text = "ALVO🎯"
-	end
+    if aleatorio then
+        targetButton.Text = "ALVO🎯: ❓️ALEATÓRIO❓️"
+    elseif alvo then
+        targetButton.Text = "ALVO🎯: "..alvo.Name
+    else
+        targetButton.Text = "ALVO🎯"
+    end
 end
 
+atualizarTextoAngulo()
+
+-- DISTÂNCIA NO TECLADO
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.PageUp then
+        DISTANCIA = math.min(15, DISTANCIA + 1)
+    elseif input.KeyCode == Enum.KeyCode.PageDown then
+        DISTANCIA = math.max(2, DISTANCIA - 1)
+    end
+end)
+
+-- TROCAR POSIÇÃO
+anguloButton.Activated:Connect(function()
+    if ANGULO == "cabeça" then
+        ANGULO = "costas"
+    elseif ANGULO == "costas" then
+        ANGULO = "pes"
+    else
+        ANGULO = "cabeça"
+    end
+
+    if ANGULO == "pes" and ativo then
+        ativarModoPes(LocalPlayer.Character)
+    else
+        restaurarColisoes()
+    end
+
+    atualizarTextoAngulo()
+end)
+
+-- VALIDAR JOGADOR
 local function valido(p)
-	if not p or p == LocalPlayer then return false end
+    if not p or p == LocalPlayer then
+        return false
+    end
 
-	local char = p.Character
-	if not char then return false end
+    local char = p.Character
+    if not char then
+        return false
+    end
 
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
 
-	return hum and root and hum.Health > 0
+    return hum ~= nil and root ~= nil and hum.Health > 0
 end
 
+-- JOGADOR MAIS PRÓXIMO
 local function maisProximo()
-	local char = LocalPlayer.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
 
-	if not root then return nil end
+    local escolhido = nil
+    local menor = math.huge
 
-	local escolhido
-	local menor = math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if valido(p) then
+            local r = p.Character:FindFirstChild("HumanoidRootPart")
+            if r then
+                local d = (root.Position - r.Position).Magnitude
+                if d < menor then
+                    menor = d
+                    escolhido = p
+                end
+            end
+        end
+    end
 
-	for _,p in ipairs(Players:GetPlayers()) do
-		if valido(p) then
-			local r = p.Character:FindFirstChild("HumanoidRootPart")
-
-			if r then
-				local d = (root.Position-r.Position).Magnitude
-
-				if d < menor then
-					menor = d
-					escolhido = p
-				end
-			end
-		end
-	end
-
-	return escolhido
+    return escolhido
 end
 
+-- ESCOLHER ALVO ALEATÓRIO
 local function aleatorioJogador()
-	local candidatos = {}
+    local candidatos = {}
 
-	for _,p in ipairs(Players:GetPlayers()) do
-		if valido(p) and p ~= alvo then
-			table.insert(candidatos,p)
-		end
-	end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if valido(p) and p ~= alvo then
+            table.insert(candidatos, p)
+        end
+    end
 
-	if #candidatos == 0 then
-		return maisProximo()
-	end
+    if #candidatos == 0 then
+        return maisProximo()
+    end
 
-	return candidatos[math.random(1,#candidatos)]
+    return candidatos[math.random(1, #candidatos)]
 end
 
-local function observarMorte()
+-- LIMPAR ESTABILIZAÇÃO
+local function limparEstabilizacao()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
 
-	if morteConnection then
-		morteConnection:Disconnect()
-	end
+    if alignPosition then
+        alignPosition:Destroy()
+        alignPosition = nil
+    end
 
-	if not alvo then return end
+    if alignOrientation then
+        alignOrientation:Destroy()
+        alignOrientation = nil
+    end
 
-	local char = alvo.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if attachment0 then
+        attachment0:Destroy()
+        attachment0 = nil
+    end
+end
 
-	if not hum then return end
+-- OBSERVAR MORTE DO ALVO
+local observarMorte
 
-	morteConnection = hum.Died:Connect(function()
+observarMorte = function()
+    if morteConnection then
+        morteConnection:Disconnect()
+        morteConnection = nil
+    end
 
-		if not ativo or not aleatorio then return end
+    if not alvo then return end
 
-		task.wait(0.2)
+    local char = alvo.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
 
-		if not ativo then return end
+    morteConnection = hum.Died:Connect(function()
+        if not ativo or not aleatorio then return end
 
-		alvo = maisProximo()
+        task.wait(0.2)
+        if not ativo then return end
 
-		if not alvo then
-			alvo = aleatorioJogador()
-		end
+        alvo = aleatorioJogador()
 
-		if alvo then
-			atualizarAlvo()
-			observarMorte()
-		end
-	end)
+        if alvo then
+            atualizarAlvo()
+            observarMorte()
+        end
+    end)
+end
+
+-- INICIAR ESTABILIZAÇÃO
+local function iniciarEstabilizacao()
+    limparEstabilizacao()
+
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+
+    if ANGULO == "pes" then
+        ativarModoPes(char)
+    end
+
+    attachment0 = Instance.new("Attachment")
+    attachment0.Name = "HenriqueStableAttachment"
+    attachment0.Parent = root
+
+    alignPosition = Instance.new("AlignPosition")
+    alignPosition.Name = "HenriqueStablePosition"
+    alignPosition.Mode = Enum.PositionAlignmentMode.OneAttachment
+    alignPosition.Attachment0 = attachment0
+    alignPosition.ApplyAtCenterOfMass = true
+    alignPosition.MaxForce = 1000000
+    alignPosition.MaxVelocity = 800
+    alignPosition.Responsiveness = 100
+    alignPosition.RigidityEnabled = false
+    alignPosition.Position = root.Position
+    alignPosition.Parent = root
+
+    alignOrientation = Instance.new("AlignOrientation")
+    alignOrientation.Name = "HenriqueStableOrientation"
+    alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    alignOrientation.Attachment0 = attachment0
+    alignOrientation.MaxTorque = 1000000
+    alignOrientation.Responsiveness = 50
+    alignOrientation.RigidityEnabled = false
+    alignOrientation.CFrame = root.CFrame.Rotation
+    alignOrientation.Parent = root
+
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
+        if not ativo then return end
+
+        local personagemAtual = LocalPlayer.Character
+
+        if ANGULO == "pes" then
+            -- Reaplica o NoClip continuamente enquanto Pés estiver ativo.
+            -- Isso também inclui partes que forem adicionadas depois.
+            if personagemAtual then
+                ativarModoPes(personagemAtual)
+            end
+        elseif personagemPes then
+            restaurarColisoes()
+        end
+
+        if not valido(alvo) then
+            if aleatorio then
+                alvo = aleatorioJogador()
+                if alvo then
+                    atualizarAlvo()
+                    observarMorte()
+                end
+            end
+            return
+        end
+
+        local targetChar = alvo.Character
+        local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        local targetHead = targetChar and targetChar:FindFirstChild("Head")
+        if not targetRoot or not targetHead then return end
+
+        local posicao
+        local orientacao
+
+        if ANGULO == "cabeça" then
+            posicao = targetHead.Position + Vector3.new(0, ALTURA, 0)
+            orientacao = CFrame.Angles(math.rad(-90), 0, 0)
+
+        elseif ANGULO == "costas" then
+            posicao = targetRoot.Position
+                - targetRoot.CFrame.LookVector * DISTANCIA_COSTAS
+
+            local olhar = Vector3.new(
+                targetRoot.Position.X,
+                posicao.Y,
+                targetRoot.Position.Z
+            )
+
+            if (olhar - posicao).Magnitude > 0.01 then
+                orientacao = CFrame.lookAt(posicao, olhar).Rotation
+            else
+                orientacao = targetRoot.CFrame.Rotation
+            end
+
+        else
+            -- Posição abaixo do alvo
+            posicao = targetRoot.Position
+                - Vector3.new(0, PROFUNDIDADE_PES, 0)
+
+            orientacao = CFrame.Angles(math.rad(90), 0, 0)
+        end
+
+        if alignPosition and alignPosition.Parent then
+            alignPosition.Position = posicao
+        end
+
+        if alignOrientation and alignOrientation.Parent then
+            alignOrientation.CFrame = orientacao
+        end
+    end)
+
+    return true
 end
 
 -- DESLIGAR
 local function desligar()
+    ativo = false
 
-	ativo = false
+    if seguirConnection then
+        seguirConnection:Disconnect()
+        seguirConnection = nil
+    end
 
-	if seguirConnection then
-		seguirConnection:Disconnect()
-		seguirConnection = nil
-	end
+    if morteConnection then
+        morteConnection:Disconnect()
+        morteConnection = nil
+    end
 
-	if morteConnection then
-		morteConnection:Disconnect()
-		morteConnection = nil
-	end
+    limparEstabilizacao()
+    restaurarColisoes()
 
-	local meuChar = LocalPlayer.Character
-	local meuRoot = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-	local alvoChar = alvo and alvo.Character
-	local alvoRoot = alvoChar and alvoChar:FindFirstChild("HumanoidRootPart")
+    if hum then
+        hum.AutoRotate = true
+    end
 
-	if meuRoot and alvoRoot then
-		meuRoot.CFrame = alvoRoot.CFrame * CFrame.new(DISTANCIA_LADO,0,0)
-	end
-
-	local hum = meuChar and meuChar:FindFirstChildOfClass("Humanoid")
-
-	if hum then
-		hum.AutoRotate = true
-	end
-
-	toggle.Text = "OFF❌"
-	toggle.BackgroundColor3 = Color3.fromRGB(210,45,45)
+    toggle.Text = "OFF❌"
+    toggle.BackgroundColor3 = Color3.fromRGB(210,45,45)
 end
 
 -- LIGAR
 local function ligar()
+    if ativo then return end
 
-	if aleatorio then
-		alvo = aleatorioJogador()
-	elseif not valido(alvo) then
-		alvo = maisProximo()
-	end
+    if aleatorio then
+        alvo = aleatorioJogador()
+    elseif not valido(alvo) then
+        alvo = maisProximo()
+    end
 
-	if not alvo then
-		toggle.Text = "🤷SEM ALVO🚫"
+    if not alvo then
+        toggle.Text = "🚫SEM ALVO🚫"
 
-		task.delay(1,function()
-			if not ativo then
-				toggle.Text = "OFF❌"
-			end
-		end)
+        task.delay(1, function()
+            if not ativo then
+                toggle.Text = "OFF❌"
+            end
+        end)
 
-		return
-	end
+        return
+    end
 
-	ativo = true
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-	toggle.Text = "ON✅"
-	toggle.BackgroundColor3 = Color3.fromRGB(45,200,80)
+    if not iniciarEstabilizacao() then
+        toggle.Text = "OFF❌"
+        return
+    end
 
-	atualizarAlvo()
-	observarMorte()
+    ativo = true
 
-	local char = LocalPlayer.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.AutoRotate = false
+    end
 
-	if hum then
-		hum.AutoRotate = false
-	end
+    toggle.Text = "ON✅"
+    toggle.BackgroundColor3 = Color3.fromRGB(45,200,80)
 
-	seguirConnection = RunService.RenderStepped:Connect(function()
-
-		if not ativo then return end
-
-		if not valido(alvo) then
-
-			if aleatorio then
-				alvo = maisProximo()
-
-				if alvo then
-					atualizarAlvo()
-					observarMorte()
-				end
-			end
-
-			return
-		end
-
-		local meuChar = LocalPlayer.Character
-		local alvoChar = alvo.Character
-
-		if not meuChar or not alvoChar then return end
-
-		local meuRoot = meuChar:FindFirstChild("HumanoidRootPart")
-		local alvoHead = alvoChar:FindFirstChild("Head")
-
-		if not meuRoot or not alvoHead then return end
-
-		local posicao =
-			alvoHead.Position + Vector3.new(0,ALTURA,0)
-
-		meuRoot.CFrame =
-			CFrame.new(posicao) *
-			CFrame.Angles(math.rad(-90),0,0)
-
-		meuRoot.AssemblyLinearVelocity = Vector3.zero
-		meuRoot.AssemblyAngularVelocity = Vector3.zero
-	end)
+    atualizarAlvo()
+    observarMorte()
 end
 
--- ON✅️/OFF❌️
+-- ON/OFF
 toggle.Activated:Connect(function()
-	if ativo then
-		desligar()
-	else
-		ligar()
-	end
+    if ativo then
+        desligar()
+    else
+        ligar()
+    end
 end)
 
 -- ABRIR LISTA
 targetButton.Activated:Connect(function()
-	lista.Visible = not lista.Visible
+    lista.Visible = not lista.Visible
 end)
 
 -- ATUALIZAR LISTA
 local function atualizarLista()
+    for _, obj in ipairs(lista:GetChildren()) do
+        if obj:IsA("TextButton") then
+            obj:Destroy()
+        end
+    end
 
-	for _,obj in ipairs(lista:GetChildren()) do
-		if obj:IsA("TextButton") then
-			obj:Destroy()
-		end
-	end
+    local randomButton = Instance.new("TextButton")
+    randomButton.Size = UDim2.new(1,-10,0,38)
+    randomButton.BackgroundColor3 = Color3.fromRGB(80,80,90)
+    randomButton.TextColor3 = Color3.new(1,1,1)
+    randomButton.Text = "❓️ALEATÓRIO❓️"
+    randomButton.TextScaled = true
+    randomButton.Font = Enum.Font.GothamBold
+    randomButton.BorderSizePixel = 0
+    randomButton.ZIndex = 2
+    randomButton.Parent = lista
 
-	local randomButton = Instance.new("TextButton")
-	randomButton.Size = UDim2.new(1,-10,0,38)
-	randomButton.BackgroundColor3 = Color3.fromRGB(80,80,90)
-	randomButton.TextColor3 = Color3.new(1,1,1)
-	randomButton.Text = "❓️ALEATÓRIO❓️"
-	randomButton.TextScaled = true
-	randomButton.Font = Enum.Font.GothamBold
-	randomButton.BorderSizePixel = 0
-	randomButton.ZIndex = 2
-	randomButton.Parent = lista
+    randomButton.Activated:Connect(function()
+        aleatorio = true
+        alvo = aleatorioJogador()
+        atualizarAlvo()
+        lista.Visible = false
 
-	randomButton.Activated:Connect(function()
-		aleatorio = true
-		alvo = nil
-		atualizarAlvo()
-		lista.Visible = false
-	end)
+        if ativo then
+            observarMorte()
+        end
+    end)
 
-	for _,p in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.new(1,-10,0,38)
+            b.BackgroundColor3 = Color3.fromRGB(55,55,65)
+            b.TextColor3 = Color3.new(1,1,1)
+            b.Text = p.Name
+            b.TextScaled = true
+            b.Font = Enum.Font.GothamBold
+            b.BorderSizePixel = 0
+            b.ZIndex = 2
+            b.Parent = lista
 
-		if p ~= LocalPlayer then
+            b.Activated:Connect(function()
+                aleatorio = false
+                alvo = p
+                atualizarAlvo()
+                lista.Visible = false
 
-			local b = Instance.new("TextButton")
-			b.Size = UDim2.new(1,-10,0,38)
-			b.BackgroundColor3 = Color3.fromRGB(55,55,65)
-			b.TextColor3 = Color3.new(1,1,1)
-			b.Text = p.Name
-			b.TextScaled = true
-			b.Font = Enum.Font.GothamBold
-			b.BorderSizePixel = 0
-			b.ZIndex = 2
-			b.Parent = lista
+                if ativo then
+                    observarMorte()
+                end
+            end)
+        end
+    end
 
-			b.Activated:Connect(function()
-
-				aleatorio = false
-				alvo = p
-
-				atualizarAlvo()
-				lista.Visible = false
-
-				if ativo then
-					observarMorte()
-				end
-			end)
-		end
-	end
-
-	task.defer(function()
-		lista.CanvasSize = UDim2.new(
-			0,0,0,layout.AbsoluteContentSize.Y+10
-		)
-	end)
+    task.defer(function()
+        lista.CanvasSize = UDim2.new(
+            0, 0, 0, layout.AbsoluteContentSize.Y + 10
+        )
+    end)
 end
 
 Players.PlayerAdded:Connect(function()
-	task.wait(0.2)
-	atualizarLista()
-	atualizarPlayers()
+    task.wait(0.2)
+    atualizarLista()
+    atualizarPlayers()
 end)
 
 Players.PlayerRemoving:Connect(function(p)
+    if alvo == p then
+        if aleatorio and ativo then
+            alvo = aleatorioJogador()
+            if alvo then
+                atualizarAlvo()
+                observarMorte()
+            end
+        else
+            alvo = nil
+            atualizarAlvo()
+        end
+    end
 
-	if alvo == p then
-
-		if aleatorio and ativo then
-			alvo = maisProximo()
-
-			if alvo then
-				atualizarAlvo()
-				observarMorte()
-			end
-		else
-			alvo = nil
-			atualizarAlvo()
-		end
-	end
-
-	atualizarLista()
-	atualizarPlayers()
+    atualizarLista()
+    atualizarPlayers()
 end)
 
 atualizarLista()
 
--- ==========================================
--- BOTÃO 🔄MUDAR SERVIDOR🔄
--- ==========================================
-
+-- MUDAR SERVIDOR
 local serverButton = Instance.new("ImageButton")
 serverButton.Size = UDim2.new(0,140,0,42)
 serverButton.Position = UDim2.new(1,-155,0.45,-87)
-
--- FUNDO IGUAL AOS OUTROS BOTÕES
 serverButton.BackgroundColor3 = Color3.fromRGB(45,45,55)
 serverButton.BackgroundTransparency = 0
-
--- MANTÉM A IMAGEM
 serverButton.Image = "rbxassetid://73661335718300"
-
 serverButton.ZIndex = 10
 serverButton.Parent = gui
 
--- BORDAS ARREDONDADAS
 local serverCorner = Instance.new("UICorner")
 serverCorner.CornerRadius = UDim.new(0,10)
 serverCorner.Parent = serverButton
@@ -452,13 +655,9 @@ serverText.Font = Enum.Font.GothamBold
 serverText.ZIndex = 11
 serverText.Parent = serverButton
 
--- ==========================================
--- TELA DE CONFIRMAÇÃO
--- ==========================================
-
+-- CONFIRMAÇÃO DE SAÍDA
 local confirmGui = Instance.new("Frame")
 confirmGui.Size = UDim2.new(1,0,1,0)
-confirmGui.Position = UDim2.new(0,0,0,0)
 confirmGui.BackgroundColor3 = Color3.fromRGB(90,90,90)
 confirmGui.BackgroundTransparency = 0.15
 confirmGui.Visible = false
@@ -488,7 +687,6 @@ confirmText.Font = Enum.Font.GothamBold
 confirmText.ZIndex = 102
 confirmText.Parent = confirmBox
 
--- BOTÃO SIM
 local simButton = Instance.new("TextButton")
 simButton.Size = UDim2.new(0,125,0,50)
 simButton.Position = UDim2.new(0,25,1,-70)
@@ -505,7 +703,6 @@ local simCorner = Instance.new("UICorner")
 simCorner.CornerRadius = UDim.new(0,10)
 simCorner.Parent = simButton
 
--- BOTÃO NÃO
 local naoButton = Instance.new("TextButton")
 naoButton.Size = UDim2.new(0,125,0,50)
 naoButton.Position = UDim2.new(1,-150,1,-70)
@@ -522,32 +719,24 @@ local naoCorner = Instance.new("UICorner")
 naoCorner.CornerRadius = UDim.new(0,10)
 naoCorner.Parent = naoButton
 
--- ABRIR CONFIRMAÇÃO
 serverButton.Activated:Connect(function()
-	confirmGui.Visible = true
+    confirmGui.Visible = true
 end)
 
--- NÃO: FECHA SOMENTE A CONFIRMAÇÃO
 naoButton.Activated:Connect(function()
-	confirmGui.Visible = false
+    confirmGui.Visible = false
 end)
 
--- SIM: SAIR DO JOGO
 simButton.Activated:Connect(function()
+    simButton.Text = "Saindo..."
+    task.wait(0.3)
 
-	simButton.Text = "Saindo..."
-
-	task.wait(0.3)
-
-	LocalPlayer:Kick(
-		"Mudando de servidor só entrar novamente no jogo que você estava jogando🎮"
-	)
+    LocalPlayer:Kick(
+        "Mudando de servidor só entrar novamente no jogo que você estava jogando🎮"
+    )
 end)
 
--- ==========================================
--- BOTÃO ARRASTAR GUI
--- ==========================================
-
+-- ARRASTAR GUI
 local dragButton = Instance.new("TextButton")
 dragButton.Size = UDim2.new(0,140,0,38)
 dragButton.Position = UDim2.new(1,-155,0.45,-129)
@@ -564,82 +753,67 @@ local dragCorner = Instance.new("UICorner")
 dragCorner.CornerRadius = UDim.new(0,10)
 dragCorner.Parent = dragButton
 
--- ARRASTAR TODO O GUI PELO BOTÃO
-local arrastando = false
-local inicioToque
-local inicioPosicao
-
 dragButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseButton1 then
 
-	if input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseButton1 then
-
-		arrastando = true
-		inicioToque = input.Position
-		inicioPosicao = toggle.Position
-	end
+        arrastando = true
+        inicioToque = input.Position
+        inicioPosicao = toggle.Position
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
+    if not arrastando or not inicioToque or not inicioPosicao then
+        return
+    end
 
-	if not arrastando then return end
+    if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseMovement then
 
-	if input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - inicioToque
 
-		local delta = input.Position - inicioToque
+        local function mover(obj, extraY, extraX)
+            obj.Position = UDim2.new(
+                inicioPosicao.X.Scale,
+                inicioPosicao.X.Offset + delta.X + (extraX or 0),
+                inicioPosicao.Y.Scale,
+                inicioPosicao.Y.Offset + delta.Y + extraY
+            )
+        end
 
-		toggle.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y
-		)
-
-		playersText.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y - 40
-		)
-
-		targetButton.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y + 58
-		)
-
-		lista.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X - 50,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y + 108
-		)
-
-		serverButton.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y - 87
-		)
-
-		dragButton.Position = UDim2.new(
-			inicioPosicao.X.Scale,
-			inicioPosicao.X.Offset + delta.X,
-			inicioPosicao.Y.Scale,
-			inicioPosicao.Y.Offset + delta.Y - 129
-		)
-	end
+        mover(painel, -135, -7)
+        mover(toggle, 0)
+        mover(playersText, -40)
+        mover(targetButton, 58)
+        mover(anguloButton, 108)
+        mover(lista, 158, -50)
+        mover(serverButton, -87)
+        mover(dragButton, -129)
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseButton1 then
 
-	if input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        arrastando = false
+        inicioToque = nil
+        inicioPosicao = nil
+    end
+end)
 
-		arrastando = false
-	end
+-- RESTAURAR COLISÕES SE O PERSONAGEM RENASCER
+LocalPlayer.CharacterAdded:Connect(function(char)
+    restaurarColisoes()
+
+    if ativo and ANGULO == "pes" then
+        task.wait(0.5)
+
+        if ativo and ANGULO == "pes" and LocalPlayer.Character == char then
+            ativarModoPes(char)
+        end
+    end
 end)
 
 -- FPS / PING🎮
